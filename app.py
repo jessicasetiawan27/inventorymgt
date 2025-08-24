@@ -6,13 +6,6 @@ from datetime import datetime
 import pandas as pd
 import base64
 from io import BytesIO
-from supabase import create_client
-from dotenv import load_dotenv
-
-load_dotenv()
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Optional grafik
 try:
@@ -307,55 +300,44 @@ def save_data_sheets(data, brand_key):
 
 # ====== Wrapper load/save (Sheets -> fallback JSON) ======
 def load_data(brand_key):
-    try:
-        users_resp = supabase.table(f"users_{brand_key}").select("*").execute()
-        inv_resp = supabase.table(f"inventory_{brand_key}").select("*").execute()
-        pending_resp = supabase.table(f"pending_{brand_key}").select("*").execute()
-        hist_resp = supabase.table(f"history_{brand_key}").select("*").execute()
-
-        users = {u["username"]: {"password": u["password"], "role": u["role"]}
-                 for u in (users_resp.data or [])}
-        inventory = {i["code"]: {"name": i["name"], "qty": i["qty"],
-                                 "unit": i["unit"], "category": i["category"]}
-                     for i in (inv_resp.data or [])}
-        pending = pending_resp.data or []
-        history = hist_resp.data or []
-
-        return {
-            "users": users,
-            "inventory": inventory,
-            "item_counter": 0,
-            "pending_requests": pending,
-            "history": history,
-        }
-    except Exception as e:
-        st.error(f"Gagal load dari Supabase: {e}")
-        return {"users": {}, "inventory": {}, "item_counter": 0,
-                "pending_requests": [], "history": []}
+    if USE_SHEETS:
+        try:
+            return load_data_sheets(brand_key)
+        except Exception as e:
+            st.warning(f"Gagal membaca Google Sheets: {e}. Pakai data lokal sementara.")
+    # fallback JSON
+    data_file = DATA_FILES[brand_key]
+    if os.path.exists(data_file):
+        try:
+            with open(data_file, "r") as f:
+                data = json.load(f)
+                for code, item in data.get("inventory", {}).items():
+                    if "category" not in item:
+                        item["category"] = "Uncategorized"
+                return data
+        except (json.JSONDecodeError, FileNotFoundError):
+            pass
+    return {
+        "users": {
+            "admin": {"password": st.secrets.get("passwords", {}).get("admin"), "role": "admin"},
+            "user":  {"password": st.secrets.get("passwords", {}).get("user"),  "role": "user"},
+        },
+        "inventory": {},
+        "item_counter": 0,
+        "pending_requests": [],
+        "history": [],
+    }
 
 def save_data(data, brand_key):
-    try:
-        # clear existing rows → lalu insert ulang (sinkronisasi penuh)
-        supabase.table(f"users_{brand_key}").delete().neq("username", "").execute()
-        supabase.table(f"inventory_{brand_key}").delete().neq("code", "").execute()
-        supabase.table(f"pending_{brand_key}").delete().neq("type", "").execute()
-        supabase.table(f"history_{brand_key}").delete().neq("action", "").execute()
-
-        users_rows = [{"username": u, "password": info["password"], "role": info["role"]}
-                      for u, info in data.get("users", {}).items()]
-        inv_rows = [{"code": c, "name": it["name"], "qty": it["qty"],
-                     "unit": it["unit"], "category": it["category"]}
-                    for c, it in data.get("inventory", {}).items()]
-
-        if users_rows: supabase.table(f"users_{brand_key}").insert(users_rows).execute()
-        if inv_rows: supabase.table(f"inventory_{brand_key}").insert(inv_rows).execute()
-        if data.get("pending_requests"):
-            supabase.table(f"pending_{brand_key}").insert(data["pending_requests"]).execute()
-        if data.get("history"):
-            supabase.table(f"history_{brand_key}").insert(data["history"]).execute()
-
-    except Exception as e:
-        st.error(f"Gagal simpan ke Supabase: {e}")
+    if USE_SHEETS:
+        try:
+            save_data_sheets(data, brand_key)
+        except Exception as e:
+            st.warning(f"Gagal menulis ke Google Sheets: {e}. Menyimpan cadangan lokal.")
+    # simpan cadangan JSON lokal
+    data_file = DATA_FILES[brand_key]
+    with open(data_file, "w") as f:
+        json.dump(data, f, indent=4)
 
 # ===================== DATA PREP UNTUK DASHBOARD =====================
 def _prepare_history_df(data: dict) -> pd.DataFrame:
@@ -1658,8 +1640,6 @@ else:
                 st.dataframe(df_rows, use_container_width=True, hide_index=True)
             else:
                 st.info("Anda belum memiliki riwayat transaksi.")
-
-
 
 
 
