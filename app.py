@@ -7,6 +7,8 @@ from io import BytesIO
 from datetime import datetime
 import pandas as pd
 import streamlit as st
+st.cache_data.clear()
+
 # --- Hotfix: alias agar kode lama tetap jalan di Streamlit baru ---
 try:
     if not hasattr(st, "experimental_rerun"):
@@ -1113,4 +1115,5 @@ elif role == "user":
             for c in cols_show:
                 if c not in df_hist.columns: df_hist[c] = None
             st.dataframe(df_hist[cols_show].sort_values("timestamp", ascending=False), use_container_width=True, hide_index=True)
+
 
