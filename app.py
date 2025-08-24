@@ -1,8 +1,3 @@
-import streamlit as st, os
-st.caption(f"🧩 Streamlit version: {st.__version__}")
-st.caption(f"📄 Running file: {__file__}")
-st.caption(f"📦 CWD: {os.getcwd()}")
-
 # app.py
 # Versi: UI & struktur mirip "before" (dashboard pro, menu, approve table, dsb.)
 # Backend: Supabase (tanpa file JSON/Sheets)
@@ -25,10 +20,23 @@ from supabase import create_client, Client
 # ================== KONFIGURASI & STYLING ==================
 st.set_page_config(page_title="Inventory System", page_icon="🧰", layout="wide")
 
-# Branding & style mirip file "before"
-BANNER_URL = "https://media.licdn.com/dms/image/v2/D563DAQFDri8xlKNIvg/image-scale_191_1128/image-scale_191_1128/0/1678337293506/pesona_inti_rasa_cover?e=2147483647&v=beta&t=vHi0xtyAZsT9clHb0yBYPE8M9IaO2dNY6Cb_Vs3Ddlo"
-ICON_URL = "https://i.ibb.co/7C96T9y/favicon.png"
+# --- Compat rerun untuk Streamlit lama/baru ---
+def _safe_rerun():
+    try:
+        st.rerun()  # Streamlit baru
+    except AttributeError:
+        try:
+            st.experimental_rerun()  # Streamlit lama
+        except AttributeError:
+            pass
 
+# (opsional) tampilkan info runtime untuk diagnosis
+# st.caption(f"🧩 Streamlit version: {st.__version__}")
+# st.caption(f"📄 Running file: {__file__}")
+# st.caption(f"📦 CWD: {os.getcwd()}")
+
+# Branding & style mirip file "before"
+BANNER_URL = "https://media.licdn.com/dms/image/v2/D563DAQFDri8xlKNIvg/image-scale_191_1128/image-scale_191_1128/0/1678337293506/pesona_inti_rasa_cover"
 st.markdown("""
     <style>
     .main { background-color: #F8FAFC; }
@@ -144,7 +152,7 @@ def load_inventory(brand=None) -> pd.DataFrame:
     data = q.execute().data or []
     df = pd.DataFrame(data)
     if not df.empty:
-        df.rename(columns={"item":"name"}, inplace=True, errors="ignore")
+        df.rename(columns={"item":"name","balance":"qty"}, inplace=True, errors="ignore")
         for c in ["code","name","unit","category"]:
             if c not in df.columns: df[c] = "-"
         if "qty" not in df.columns: df["qty"] = 0
@@ -168,13 +176,14 @@ def load_history(brand=None) -> pd.DataFrame:
     return pd.DataFrame(data)
 
 def inv_add_item(code, name, qty, unit="-", category="Uncategorized", brand=None):
-    payload = {"code": code, "name": name, "qty": int(qty), "unit": unit or "-", "category": category or "Uncategorized"}
+    payload = {"code": code, "item": name, "qty": int(qty), "unit": unit or "-", "category": category or "Uncategorized"}
     if ENABLE_BRAND: payload["brand"] = brand or BRANDS[0]
     supabase.from_("inventory_gulavit").insert(payload).execute()
     st.cache_data.clear()
 
 def inv_update_qty(code, new_qty):
-    supabase.from_("inventory_gulavit").update({"qty": int(new_qty)}).eq("code", code).execute()
+    # Jika kolom di Supabase masih 'balance', update keduanya untuk aman
+    supabase.from_("inventory_gulavit").update({"qty": int(new_qty), "balance": int(new_qty)}).eq("code", code).execute()
     st.cache_data.clear()
 
 def pending_insert(rec_type, rec, brand=None):
@@ -378,7 +387,7 @@ if not st.session_state.logged_in:
             st.session_state.username = username
             st.session_state.role = user["role"]
             st.success(f"Login berhasil sebagai {user['role'].upper()}")
-            st.rerun()
+            _safe_rerun()
         else:
             st.error("❌ Username atau password salah.")
     st.stop()
@@ -397,13 +406,14 @@ if ENABLE_BRAND:
     st.session_state.current_brand = brand_choice
 else:
     st.session_state.current_brand = BRANDS[0]
+brand = st.session_state.current_brand if ENABLE_BRAND else None
 
 if st.sidebar.button("🚪 Logout"):
     st.session_state.logged_in = False
     st.session_state.username = ""
     st.session_state.role = ""
     st.session_state.current_brand = BRANDS[0]
-    st.rerun()
+    _safe_rerun()
 
 st.sidebar.divider()
 
@@ -413,7 +423,6 @@ if st.session_state.notification:
     st.session_state.notification = None
 
 # Muat data dari Supabase (cached)
-brand = st.session_state.current_brand if ENABLE_BRAND else None
 df_inv = load_inventory(brand=brand)
 df_hist = load_history(brand=brand)
 df_pending = load_pending(brand=brand)
@@ -523,10 +532,10 @@ if role == "admin":
             if st.button("Tambah Barang Manual"):
                 if not code_input.strip():
                     st.error("Kode Barang wajib diisi.")
-                elif not name.strip():
-                    st.error("Nama barang wajib diisi.")
                 elif (not df_inv.empty) and (code_input in df_inv["code"].tolist()):
                     st.error(f"Kode Barang '{code_input}' sudah ada.")
+                elif not name.strip():
+                    st.error("Nama barang wajib diisi.")
                 else:
                     inv_add_item(code_input, name.strip(), qty, unit.strip() or "-", category.strip() or "Uncategorized", brand=brand)
                     history_insert({
@@ -535,7 +544,7 @@ if role == "admin":
                         "event":"-","timestamp":timestamp()
                     }, brand=brand)
                     st.success(f"Barang '{name}' berhasil ditambahkan dengan kode {code_input}")
-                    st.rerun()
+                    _safe_rerun()
 
         with tab2:
             st.info("Format Excel: **Kode Barang | Nama Barang | Qty | Satuan | Kategori**")
@@ -543,9 +552,15 @@ if role == "admin":
             tmpl = pd.DataFrame([{
                 "Kode Barang":"ITM-0001","Nama Barang":"Contoh Produk","Qty":10,"Satuan":"pcs","Kategori":"Umum"
             }])
+            def _template_bytes(df, sheet="Template Master"):
+                bio = BytesIO()
+                with pd.ExcelWriter(bio, engine="xlsxwriter") as w:
+                    df.to_excel(w, sheet_name=sheet, index=False)
+                bio.seek(0)
+                return bio.read()
             st.download_button(
                 "📥 Unduh Template Master Excel",
-                data=dataframe_to_excel_bytes(tmpl, "Template Master"),
+                data=_template_bytes(tmpl, "Template Master"),
                 file_name=f"Template_Master_{st.session_state.current_brand.capitalize()}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
@@ -578,7 +593,7 @@ if role == "admin":
                             added += 1
                         if added: st.success(f"{added} item master berhasil ditambahkan.")
                         if errors: st.warning("Beberapa baris dilewati:\n- " + "\n- ".join(errors))
-                        st.rerun()
+                        _safe_rerun()
                 except Exception as e:
                     st.error(f"Gagal membaca Excel: {e}")
 
@@ -615,7 +630,7 @@ if role == "admin":
             if col1.button("Approve Selected"):
                 if selected_rows.empty:
                     st.session_state.notification = {"type":"warning","message":"Pilih setidaknya satu item untuk di-approve."}
-                    st.rerun()
+                    _safe_rerun()
                 approved = 0
                 # muat inventori terbaru
                 cur_inv = load_inventory(brand=brand)
@@ -650,12 +665,12 @@ if role == "admin":
                             pending_delete_by_id(req["id"])
                         approved += 1
                 st.session_state.notification = {"type":"success","message": f"{approved} request di-approve."}
-                st.rerun()
+                _safe_rerun()
 
             if col2.button("Reject Selected"):
                 if selected_rows.empty:
                     st.session_state.notification = {"type":"warning","message":"Pilih setidaknya satu item untuk di-reject."}
-                    st.rerun()
+                    _safe_rerun()
                 rejected = 0
                 for _, req in selected_rows.iterrows():
                     history_insert({
@@ -677,7 +692,7 @@ if role == "admin":
                         pending_delete_by_id(req["id"])
                     rejected += 1
                 st.session_state.notification = {"type":"success","message": f"{rejected} request di-reject."}
-                st.rerun()
+                _safe_rerun()
 
     elif menu == "Riwayat Lengkap":
         st.markdown(f"## Riwayat Lengkap - Brand {st.session_state.current_brand.capitalize()}")
@@ -766,10 +781,9 @@ if role == "admin":
     elif menu == "Reset Database":
         st.markdown(f"## Reset Database - Brand {st.session_state.current_brand.capitalize()}")
         st.divider()
-        st.warning("Aksi ini tidak dapat dibatalkan. Pastikan Anda benar-benar ingin mengosongkan data pending & riwayat.")
+        st.warning("Aksi ini tidak dapat dibatalkan. Pending & riwayat akan dikosongkan (inventori aman).")
         confirm = st.text_input("Ketik RESET untuk konfirmasi")
         if st.button("Reset Database") and confirm == "RESET":
-            # Hapus semua pending & history (inventori tidak dihapus agar aman)
             if ENABLE_BRAND:
                 supabase.from_("pending_gulavit").delete().eq("brand", brand).execute()
                 supabase.from_("history_gulavit").delete().eq("brand", brand).execute()
@@ -778,7 +792,7 @@ if role == "admin":
                 supabase.from_("history_gulavit").delete().neq("id", -1).execute()
             st.cache_data.clear()
             st.success("✅ Pending dan Riwayat berhasil direset!")
-            st.rerun()
+            _safe_rerun()
 
 # ================== MENU USER ==================
 elif role == "user":
@@ -929,7 +943,7 @@ elif role == "user":
                         st.session_state.req_in_items = new_state
                         st.session_state.in_select_flags = new_flags
                         st.success(f"{submit_count} request IN diajukan & menunggu approval.")
-                        st.rerun()
+                        _safe_rerun()
 
     elif menu == "Request Barang OUT":
         st.markdown(f"## Request Barang Keluar (Multi Item) - Brand {st.session_state.current_brand.capitalize()}")
@@ -997,7 +1011,7 @@ elif role == "user":
                     if any(mask):
                         st.session_state.req_out_items = [rec for rec, keep in zip(st.session_state.req_out_items, [not x for x in mask]) if keep]
                         st.session_state.out_select_flags = [False]*len(st.session_state.req_out_items)
-                        st.rerun()
+                        _safe_rerun()
                     else:
                         st.info("Tidak ada baris yang dipilih.")
 
@@ -1019,7 +1033,7 @@ elif role == "user":
                         st.session_state.req_out_items = new_state
                         st.session_state.out_select_flags = new_flags
                         st.success(f"{submitted} request OUT diajukan & menunggu approval.")
-                        st.rerun()
+                        _safe_rerun()
 
     elif menu == "Request Retur":
         st.markdown(f"## Request Retur - Brand {st.session_state.current_brand.capitalize()}")
@@ -1080,7 +1094,7 @@ elif role == "user":
                         st.session_state.req_ret_items = new_state
                         st.session_state.ret_select_flags = new_flags
                         st.success(f"{submitted} request Retur diajukan & menunggu approval.")
-                        st.rerun()
+                        _safe_rerun()
 
     elif menu == "Lihat Riwayat":
         st.markdown(f"## Riwayat - Brand {st.session_state.current_brand.capitalize()}")
@@ -1092,4 +1106,3 @@ elif role == "user":
             for c in cols_show:
                 if c not in df_hist.columns: df_hist[c] = None
             st.dataframe(df_hist[cols_show].sort_values("timestamp", ascending=False), use_container_width=True, hide_index=True)
-
