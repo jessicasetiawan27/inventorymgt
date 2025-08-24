@@ -7,8 +7,9 @@ import pandas as pd
 import base64
 from io import BytesIO
 from supabase import create_client, Client
+import uuid
 
-# --- Kredensial Supabase ---
+# --- Kredensial dan Inisialisasi Supabase ---
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -38,7 +39,7 @@ def load_all_data():
         st.error(f"Gagal memuat data dari Supabase. Pastikan tabel sudah dibuat. Error: {e}")
         return [], [], [], []
 
-# --- Fungsi Login ---
+# --- Fungsi Autentikasi Login ---
 def check_login(username, password):
     users, _, _, _ = load_all_data()
     df_users = pd.DataFrame(users)
@@ -48,7 +49,7 @@ def check_login(username, password):
         st.session_state.authenticated = True
         st.session_state.username = user_match.iloc[0]['username']
         st.session_state.role = user_match.iloc[0]['role']
-        st.experimental_rerun()
+        st.rerun()
     else:
         st.error("Username atau password salah.")
 
@@ -114,7 +115,7 @@ if st.session_state.role == "admin":
             try:
                 supabase.from_("inventory_gulavit").insert(new_data).execute()
                 st.success("Barang berhasil ditambahkan!")
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Terjadi kesalahan: {e}")
         else:
@@ -146,7 +147,7 @@ if st.session_state.role == "admin":
                     supabase.from_("inventory_gulavit").update({"balance": new_balance}).eq("code", item_code).execute()
                     # Tambahkan ke riwayat
                     transaksi_data = {
-                        "date": datetime.datetime.now().isoformat(),
+                        "date": datetime.now().isoformat(),
                         "code": item_code,
                         "item": selected_item['item'],
                         "qty": qty,
@@ -154,11 +155,11 @@ if st.session_state.role == "admin":
                         "trans_type": trans_type,
                         "event": f"{trans_type} oleh {st.session_state.username}",
                         "do_number": "",
-                        "timestamp": datetime.datetime.now().isoformat()
+                        "timestamp": datetime.now().isoformat()
                     }
                     supabase.from_("history_gulavit").insert(transaksi_data).execute()
                     st.success(f"Transaksi {trans_type} berhasil dicatat.")
-                    st.experimental_rerun()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Gagal mencatat transaksi: {e}")
         else:
@@ -193,7 +194,7 @@ if st.session_state.role == "admin":
                     supabase.from_("pending_gulavit").delete().eq("id", req_id).execute()
                     st.warning("Permintaan berhasil ditolak.")
                 
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Gagal memproses permintaan: {e}")
     else:
@@ -230,7 +231,7 @@ elif st.session_state.role == "approver":
                     supabase.from_("pending_gulavit").delete().eq("id", req_id).execute()
                     st.warning("Permintaan berhasil ditolak.")
                 
-                st.experimental_rerun()
+                st.rerun()
             except Exception as e:
                 st.error(f"Gagal memproses permintaan: {e}")
     else:
@@ -250,19 +251,19 @@ elif st.session_state.role == "user":
                 req_data = {
                     "user": st.session_state.username,
                     "type": "Permintaan",
-                    "date": datetime.datetime.now().isoformat(),
+                    "date": datetime.now().isoformat(),
                     "code": req_item_code,
                     "item": selected_item['item'],
                     "qty": req_qty,
                     "unit": selected_item['unit'],
                     "trans_type": "Stock Out",
                     "event": "Menunggu Persetujuan",
-                    "timestamp": datetime.datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat()
                 }
                 try:
                     supabase.from_("pending_gulavit").insert(req_data).execute()
                     st.success("Permintaan berhasil diajukan dan menunggu persetujuan.")
-                    st.experimental_rerun()
+                    st.rerun()
                 except Exception as e:
                     st.error(f"Gagal mengajukan permintaan: {e}")
         else:
@@ -271,4 +272,4 @@ elif st.session_state.role == "user":
 st.sidebar.markdown("---")
 if st.sidebar.button("Logout"):
     st.session_state.authenticated = False
-    st.experimental_rerun()
+    st.rerun()
