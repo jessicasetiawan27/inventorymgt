@@ -1,3 +1,8 @@
+import streamlit as st, os
+st.caption(f"🧩 Streamlit version: {st.__version__}")
+st.caption(f"📄 Running file: {__file__}")
+st.caption(f"📦 CWD: {os.getcwd()}")
+
 # app.py
 # Versi: UI & struktur mirip "before" (dashboard pro, menu, approve table, dsb.)
 # Backend: Supabase (tanpa file JSON/Sheets)
@@ -1087,3 +1092,4 @@ elif role == "user":
             for c in cols_show:
                 if c not in df_hist.columns: df_hist[c] = None
             st.dataframe(df_hist[cols_show].sort_values("timestamp", ascending=False), use_container_width=True, hide_index=True)
+
