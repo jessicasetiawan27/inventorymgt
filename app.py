@@ -10,8 +10,8 @@ from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
-SUPABASE_URL = st.secrets("https://jszqgnsfffmvggloprux.supabase.co")
-SUPABASE_KEY = st.secrets("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzenFnbnNmZmZtdmdnbG9wcnV4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NjAwNjY2MiwiZXhwIjoyMDcxNTgyNjYyfQ.BGYszhh29ynpatYs9qLxCPMFFUu21v62EYSIHGN1OMk")
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Optional grafik
@@ -1658,6 +1658,7 @@ else:
                 st.dataframe(df_rows, use_container_width=True, hide_index=True)
             else:
                 st.info("Anda belum memiliki riwayat transaksi.")
+
 
 
 
